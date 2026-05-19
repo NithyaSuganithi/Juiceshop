@@ -18,7 +18,8 @@ import * as utils from './utils'
 
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
-
+// Add issuer, audience claims to our JWT creation
+export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256', issuer: 'juice-shop', audience: 'web' })
 export const publicKey = fs ? fs.readFileSync('encryptionkeys/jwt.pub', 'utf8') : 'placeholder-public-key'
 const privateKey = '-----BEGIN RSA PRIVATE KEY-----\r\nMIICXAIBAAKBgQDNwqLEe9wgTXCbC7+RPdDbBbeqjdbs4kOPOIGzqLpXvJXlxxW8iMz0EaM4BKUqYsIa+ndv3NAn2RxCd5ubVdJJcX43zO6Ko0TFEZx/65gY3BE0O6syCEmUP4qbSd6exou/F+WTISzbQ5FBVPVmhnYhG/kpwt/cIxK5iUn5hm+4tQIDAQABAoGBAI+8xiPoOrA+KMnG/T4jJsG6TsHQcDHvJi7o1IKC/hnIXha0atTX5AUkRRce95qSfvKFweXdJXSQ0JMGJyfuXgU6dI0TcseFRfewXAa/ssxAC+iUVR6KUMh1PE2wXLitfeI6JLvVtrBYswm2I7CtY0q8n5AGimHWVXJPLfGV7m0BAkEA+fqFt2LXbLtyg6wZyxMA/cnmt5Nt3U2dAu77MzFJvibANUNHE4HPLZxjGNXN+a6m0K6TD4kDdh5HfUYLWWRBYQJBANK3carmulBwqzcDBjsJ0YrIONBpCAsXxk8idXb8jL9aNIg15Wumm2enqqObahDHB5jnGOLmbasizvSVqypfM9UCQCQl8xIqy+YgURXzXCN+kwUgHinrutZms87Jyi+D8Br8NY0+Nlf+zHvXAomD2W5CsEK7C+8SLBr3k/TsnRWHJuECQHFE9RA2OP8WoaLPuGCyFXaxzICThSRZYluVnWkZtxsBhW2W8z1b8PvWUE7kMy7TnkzeJS2LSnaNHoyxi7IaPQUCQCwWU4U+v4lD7uYBw00Ga/xt+7+UqFPlPVdz1yyr4q24Zxaw0LgmuEvgU5dycq8N7JxjTubX0MIRR+G9fmDBBl8=\r\n-----END RSA PRIVATE KEY-----'
 
@@ -68,7 +69,29 @@ export const sanitizeSecure = (html: string): string => {
     return sanitizeSecure(sanitized)
   }
 }
-
+// Updated isAuthorized implementation
+export const isAuthorized = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : req.cookies.token
+    // Reject request if no JWT
+    if (!token) {
+      return res.status(401).json({ status: 'error', message: 'You need to be logged in to perform this action.' })
+    }
+    const decodedJws = jws.decode(token)
+    if (decodedJws?.header.alg !== jws.ALGORITHMS[3]) {
+      return res.status(401).json({ status: 'error', message: 'Token signature error'})
+    } else {
+      // Verify signature using RSA 256, or HMAC 256
+      jwt.verify(token, publicKey, { audience: 'web', issuer: 'juice-shop', algorithms: ['HS256', 'RS256']  }, function (err, decoded) {
+        if (err) {
+          return res.status(401).json({ status: 'error', message: 'You need to be logged in to perform this action.' })
+        } else {
+          next()
+        }
+      })
+    }
+  }
+}
 export const authenticatedUsers: IAuthenticatedUsers = {
   tokenMap: {},
   idMap: {},
